@@ -165,7 +165,7 @@ PY
 
 cli_plugin_installed() {
   has_claude || return 1
-  claude plugin list --json 2>/dev/null | grep -q "\"id\": *\"$PLUGIN@$MARKETPLACE\""
+  claude plugin list --json 2>/dev/null </dev/null | grep -q "\"id\": *\"$PLUGIN@$MARKETPLACE\""
 }
 
 # ---------------------------------------------------------------------------
@@ -305,31 +305,43 @@ step_cli_register() {
     fail "claude is not available in this shell; skipping. Open a new Terminal window and re-run."
     SUMMARY+=("✗ CLI marketplace/plugin (claude not found)"); return
   fi
+  # NOTE: every claude call below gets </dev/null. These commands never read input, and when
+  # stdin is the terminal device (we exec </dev/tty for the piped-install case) while output is
+  # captured, Claude Code's runtime fails with "EINVAL: invalid argument, kqueue".
   if cli_marketplace_registered; then
     doing "Marketplace '$MARKETPLACE' already registered — refreshing it..."
-    claude plugin marketplace update "$MARKETPLACE" >/dev/null 2>&1 || note "(refresh failed; it will retry in the background next session)"
-    ok "Marketplace '$MARKETPLACE' up to date"
+    if claude plugin marketplace update "$MARKETPLACE" >/dev/null 2>&1 </dev/null; then
+      ok "Marketplace '$MARKETPLACE' up to date"
+    else
+      note "(refresh failed; it will retry in the background next session)"
+    fi
   else
     doing "Adding marketplace $PLUGIN_REPO..."
-    if ! claude plugin marketplace add "$PLUGIN_REPO" >/dev/null 2>&1; then
-      claude plugin marketplace update "$MARKETPLACE" >/dev/null 2>&1 \
+    if ! claude plugin marketplace add "$PLUGIN_REPO" >/dev/null 2>&1 </dev/null; then
+      claude plugin marketplace update "$MARKETPLACE" >/dev/null 2>&1 </dev/null \
         || die "Could not add the marketplace. Run 'claude plugin marketplace add $PLUGIN_REPO' in Terminal to see the error."
     fi
     ok "Marketplace '$MARKETPLACE' registered"
   fi
   SUMMARY+=("✓ CLI marketplace '$MARKETPLACE'")
 
+  local out
   if cli_plugin_installed; then
-    ok "Plugin $PLUGIN@$MARKETPLACE already installed"
+    doing "Plugin $PLUGIN@$MARKETPLACE already installed — checking for a newer version..."
+    if out="$(claude plugin update "$PLUGIN@$MARKETPLACE" 2>&1 </dev/null)"; then
+      ok "Plugin $PLUGIN@$MARKETPLACE is current"
+    else
+      note "(update check failed; auto-update will retry next session)"
+    fi
     SUMMARY+=("✓ Plugin $PLUGIN@$MARKETPLACE")
   else
     doing "Installing plugin $PLUGIN@$MARKETPLACE..."
-    local out
-    if out="$(claude plugin install "$PLUGIN@$MARKETPLACE" 2>&1)" || grep -qi 'already installed' <<<"$out"; then
+    if out="$(claude plugin install "$PLUGIN@$MARKETPLACE" 2>&1 </dev/null)" || grep -qi 'already installed' <<<"$out"; then
       ok "Plugin $PLUGIN@$MARKETPLACE installed"
       SUMMARY+=("✓ Plugin $PLUGIN@$MARKETPLACE (installed)")
     else
       fail "Plugin install failed:"; note "$out"
+      note "Not fatal: the settings written in step 6 install it at the start of your next Claude session."
       SUMMARY+=("✗ Plugin $PLUGIN@$MARKETPLACE — run: claude plugin install $PLUGIN@$MARKETPLACE")
     fi
   fi
