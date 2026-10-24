@@ -66,6 +66,12 @@ No prompts. The script downloads the `claude` command into your home folder.
 No prompts. The script records the Caldera marketplace in `~/.claude/settings.json` (a backup
 copy `settings.json.bak` is kept) and installs the `delivery` plugin.
 
+**Static sign-in** (1 min)
+The script downloads the `static` command (it publishes engagement dashboards to
+static.withcaldera.com) and then opens your browser to sign in with your Caldera Google
+account. Terminal prints a short code; check it matches the one in the browser, then click
+**Connect device**. If the browser does not open, see Troubleshooting.
+
 ## 4. How to know it worked
 
 The last thing printed is a **Summary** with a `✓` on every line, followed by **Next steps**.
@@ -90,6 +96,10 @@ already done.
 **`command not found: claude`**
 The `claude` command was installed but this Terminal window was opened before that. Close the
 Terminal window (Cmd + Q) and open a new one, then try again. The desktop app is unaffected.
+
+**Static sign-in did not finish, or "not signed in to Static"**
+Open Terminal and run `static login`. Your browser opens; sign in with your Caldera Google
+account, check the code, and click **Connect device**. Sign-ins last seven days.
 
 **"…cannot be opened because the developer cannot be verified" / Gatekeeper**
 macOS sometimes blocks a freshly downloaded program. Open **System Settings > Privacy &

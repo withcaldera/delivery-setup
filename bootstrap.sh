@@ -33,6 +33,8 @@ CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_BIN_DIR="$HOME/.local/bin"
 ZPROFILE="$HOME/.zprofile"
 CLT_WAIT_MAX_SECONDS=2400   # 40 minutes; the Command Line Tools download can be slow
+STATIC_REPO="withcaldera/static"          # GitHub releases hold the Static CLI binaries
+STATIC_BIN="$HOME/.local/bin/static"
 
 # Make plugin clones use HTTPS (the credential path we set up with gh), not SSH.
 export CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1
@@ -168,11 +170,15 @@ cli_plugin_installed() {
   claude plugin list --json 2>/dev/null </dev/null | grep -q "\"id\": *\"$PLUGIN@$MARKETPLACE\""
 }
 
+has_static()       { [[ -x "$STATIC_BIN" ]] || command -v static >/dev/null 2>&1; }
+static_cmd()       { if [[ -x "$STATIC_BIN" ]]; then echo "$STATIC_BIN"; else command -v static; fi; }
+static_logged_in() { has_static && "$(static_cmd)" whoami --json >/dev/null 2>&1 </dev/null; }
+
 # ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
 step_clt() {
-  header "1/7  Xcode Command Line Tools (gives you git)"
+  header "1/8  Xcode Command Line Tools (gives you git)"
   if has_clt; then ok "Already installed"; SUMMARY+=("✓ Command Line Tools"); return; fi
   doing "Installing. A macOS dialog will appear — click ${C_BOLD}Install${C_OFF}, then ${C_BOLD}Agree${C_OFF}."
   xcode-select --install >/dev/null 2>&1 || true
@@ -190,7 +196,7 @@ step_clt() {
 }
 
 step_brew() {
-  header "2/7  Homebrew (installs command-line apps)"
+  header "2/8  Homebrew (installs command-line apps)"
   if ! has_brew; then
     doing "Installing Homebrew. It will explain what it does and ask for your ${C_BOLD}Mac login password${C_OFF} (nothing is shown while you type)."
     if [[ "$YES" == "1" ]]; then export NONINTERACTIVE=1; fi
@@ -206,7 +212,7 @@ step_brew() {
 }
 
 step_gh() {
-  header "3/7  GitHub command-line tool (gh)"
+  header "3/8  GitHub command-line tool (gh)"
   if has_gh; then ok "Already installed"; SUMMARY+=("✓ gh"); return; fi
   doing "Installing gh with Homebrew..."
   brew install gh >/dev/null || die "brew install gh failed. Run 'brew install gh' in Terminal to see why, then re-run this script."
@@ -214,7 +220,7 @@ step_gh() {
 }
 
 step_github_auth() {
-  header "4/7  GitHub sign-in and access to the private plugin repo"
+  header "4/8  GitHub sign-in and access to the private plugin repo"
   if gh_logged_in; then
     ok "Signed in to GitHub as $(gh api user -q .login 2>/dev/null || echo '?')"
   else
@@ -248,7 +254,7 @@ step_github_auth() {
 }
 
 step_claude() {
-  header "5/7  Claude Code (the 'claude' terminal command)"
+  header "5/8  Claude Code (the 'claude' terminal command)"
   if has_claude; then
     ok "Already installed ($("$CLAUDE_BIN_DIR/claude" --version 2>/dev/null || claude --version 2>/dev/null || echo 'version unknown'))"
     SUMMARY+=("✓ Claude Code")
@@ -265,7 +271,7 @@ step_claude() {
 }
 
 step_settings() {
-  header "6/7  Register the Caldera marketplace in ~/.claude/settings.json (used by the desktop app)"
+  header "6/8  Register the Caldera marketplace in ~/.claude/settings.json (used by the desktop app)"
   if settings_configured; then ok "Already configured"; SUMMARY+=("✓ settings.json"); return; fi
   doing "Updating settings.json (a .bak copy is kept)..."
   "$(python_bin)" - "$CLAUDE_SETTINGS" "$MARKETPLACE" "$PLUGIN_REPO" "$PLUGIN" <<'PY' || die "Could not update settings.json (see message above). Fix the file, or ask $ACCESS_CONTACT for help, then re-run."
@@ -300,7 +306,7 @@ PY
 }
 
 step_cli_register() {
-  header "7/7  Register the marketplace and install the plugin for the terminal too"
+  header "7/8  Register the marketplace and install the plugin for the terminal too"
   if ! has_claude; then
     fail "claude is not available in this shell; skipping. Open a new Terminal window and re-run."
     SUMMARY+=("✗ CLI marketplace/plugin (claude not found)"); return
@@ -347,6 +353,41 @@ step_cli_register() {
   fi
 }
 
+step_static() {
+  header "8/8  Static CLI (publishes engagement dashboards to static.withcaldera.com)"
+  local os arch
+  os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  arch="$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
+  if has_static; then
+    ok "Already installed ($("$(static_cmd)" version 2>/dev/null </dev/null || echo 'version unknown'))"
+    SUMMARY+=("✓ Static CLI")
+  else
+    doing "Downloading the Static CLI from GitHub ($STATIC_REPO, static-$os-$arch)..."
+    mkdir -p "$CLAUDE_BIN_DIR"
+    if gh release download --repo "$STATIC_REPO" --clobber --pattern "static-$os-$arch" --output "$STATIC_BIN" >/dev/null 2>&1 \
+       && chmod 755 "$STATIC_BIN"; then
+      ok "Static CLI installed at $STATIC_BIN"; SUMMARY+=("✓ Static CLI (installed)")
+    else
+      fail "Could not download the Static CLI from $STATIC_REPO."
+      note "Not fatal: everything else works. Ask $ACCESS_CONTACT for access to $STATIC_REPO, then re-run this script."
+      SUMMARY+=("✗ Static CLI — re-run after getting access to $STATIC_REPO")
+      return
+    fi
+  fi
+  if static_logged_in; then
+    ok "Signed in to Static"
+  else
+    doing "Signing in to Static with your Caldera Google account. Your browser will open."
+    note "Check that the code in the browser matches the one printed here, then click ${C_BOLD}Connect device${C_OFF}."
+    if "$(static_cmd)" login --name "$(hostname -s 2>/dev/null || echo Mac)"; then
+      ok "Signed in to Static"
+    else
+      fail "Static sign-in did not finish. You can do it later: open Terminal and run 'static login'."
+      SUMMARY+=("✗ Static sign-in — run: static login")
+    fi
+  fi
+}
+
 print_summary() {
   header "Summary"
   local line
@@ -379,6 +420,8 @@ run_check() {
   report "settings.json: marketplace '$MARKETPLACE' (autoUpdate) + $PLUGIN@$MARKETPLACE enabled" "$(settings_configured && echo 0 || echo 1)"
   report "CLI marketplace '$MARKETPLACE' registered"      "$(cli_marketplace_registered && echo 0 || echo 1)"
   report "CLI plugin $PLUGIN@$MARKETPLACE installed"      "$(cli_plugin_installed && echo 0 || echo 1)"
+  report "Static CLI installed (static)"                  "$(has_static && echo 0 || echo 1)"
+  report "Signed in to Static (static whoami)"            "$(static_logged_in && echo 0 || echo 1)"
   echo
   if (( MISSING > 0 )); then
     echo "$MISSING item(s) missing. Run this script without --check to fix them."
@@ -414,7 +457,7 @@ main() {
 
   echo "${C_BOLD}Caldera delivery-lead setup${C_OFF}"
   echo "This will install or verify: Command Line Tools, Homebrew, gh, GitHub sign-in,"
-  echo "Claude Code, and the '$PLUGIN' plugin from $PLUGIN_REPO."
+  echo "Claude Code, the '$PLUGIN' plugin from $PLUGIN_REPO, and the Static CLI for dashboards."
   echo "Already-installed items are left alone. Nothing runs with sudo."
   if [[ "$YES" != "1" ]]; then
     if [[ -t 0 ]]; then
@@ -436,6 +479,7 @@ main() {
   step_claude
   step_settings
   step_cli_register
+  step_static
   print_summary
 }
 
