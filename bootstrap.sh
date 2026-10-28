@@ -35,6 +35,8 @@ ZPROFILE="$HOME/.zprofile"
 CLT_WAIT_MAX_SECONDS=2400   # 40 minutes; the Command Line Tools download can be slow
 STATIC_REPO="withcaldera/static"          # GitHub releases hold the Static CLI binaries
 STATIC_BIN="$HOME/.local/bin/static"
+SWEEP_REPO="withcaldera/sweep"            # GitHub releases hold the Sweep CLI tarballs
+SWEEP_PLUGIN="sweep"                      # second plugin in the same marketplace
 
 # Make plugin clones use HTTPS (the credential path we set up with gh), not SSH.
 export CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1
@@ -174,11 +176,17 @@ has_static()       { [[ -x "$STATIC_BIN" ]] || command -v static >/dev/null 2>&1
 static_cmd()       { if [[ -x "$STATIC_BIN" ]]; then echo "$STATIC_BIN"; else command -v static; fi; }
 static_logged_in() { has_static && "$(static_cmd)" whoami --json >/dev/null 2>&1 </dev/null; }
 
+has_sweep()        { [[ -x "$CLAUDE_BIN_DIR/sweep" ]] && "$CLAUDE_BIN_DIR/sweep" version --json >/dev/null 2>&1 </dev/null; }
+sweep_plugin_installed() {
+  has_claude || return 1
+  claude plugin list --json 2>/dev/null </dev/null | grep -q "\"id\": *\"$SWEEP_PLUGIN@$MARKETPLACE\""
+}
+
 # ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
 step_clt() {
-  header "1/8  Xcode Command Line Tools (gives you git)"
+  header "1/9  Xcode Command Line Tools (gives you git)"
   if has_clt; then ok "Already installed"; SUMMARY+=("✓ Command Line Tools"); return; fi
   doing "Installing. A macOS dialog will appear — click ${C_BOLD}Install${C_OFF}, then ${C_BOLD}Agree${C_OFF}."
   xcode-select --install >/dev/null 2>&1 || true
@@ -196,7 +204,7 @@ step_clt() {
 }
 
 step_brew() {
-  header "2/8  Homebrew (installs command-line apps)"
+  header "2/9  Homebrew (installs command-line apps)"
   if ! has_brew; then
     doing "Installing Homebrew. It will explain what it does and ask for your ${C_BOLD}Mac login password${C_OFF} (nothing is shown while you type)."
     if [[ "$YES" == "1" ]]; then export NONINTERACTIVE=1; fi
@@ -212,7 +220,7 @@ step_brew() {
 }
 
 step_gh() {
-  header "3/8  GitHub command-line tool (gh)"
+  header "3/9  GitHub command-line tool (gh)"
   if has_gh; then ok "Already installed"; SUMMARY+=("✓ gh"); return; fi
   doing "Installing gh with Homebrew..."
   brew install gh >/dev/null || die "brew install gh failed. Run 'brew install gh' in Terminal to see why, then re-run this script."
@@ -220,7 +228,7 @@ step_gh() {
 }
 
 step_github_auth() {
-  header "4/8  GitHub sign-in and access to the private plugin repo"
+  header "4/9  GitHub sign-in and access to the private plugin repo"
   if gh_logged_in; then
     ok "Signed in to GitHub as $(gh api user -q .login 2>/dev/null || echo '?')"
   else
@@ -254,7 +262,7 @@ step_github_auth() {
 }
 
 step_claude() {
-  header "5/8  Claude Code (the 'claude' terminal command)"
+  header "5/9  Claude Code (the 'claude' terminal command)"
   if has_claude; then
     ok "Already installed ($("$CLAUDE_BIN_DIR/claude" --version 2>/dev/null || claude --version 2>/dev/null || echo 'version unknown'))"
     SUMMARY+=("✓ Claude Code")
@@ -271,7 +279,7 @@ step_claude() {
 }
 
 step_settings() {
-  header "6/8  Register the Caldera marketplace in ~/.claude/settings.json (used by the desktop app)"
+  header "6/9  Register the Caldera marketplace in ~/.claude/settings.json (used by the desktop app)"
   if settings_configured; then ok "Already configured"; SUMMARY+=("✓ settings.json"); return; fi
   doing "Updating settings.json (a .bak copy is kept)..."
   "$(python_bin)" - "$CLAUDE_SETTINGS" "$MARKETPLACE" "$PLUGIN_REPO" "$PLUGIN" <<'PY' || die "Could not update settings.json (see message above). Fix the file, or ask $ACCESS_CONTACT for help, then re-run."
@@ -306,7 +314,7 @@ PY
 }
 
 step_cli_register() {
-  header "7/8  Register the marketplace and install the plugin for the terminal too"
+  header "7/9  Register the marketplace and install the plugin for the terminal too"
   if ! has_claude; then
     fail "claude is not available in this shell; skipping. Open a new Terminal window and re-run."
     SUMMARY+=("✗ CLI marketplace/plugin (claude not found)"); return
@@ -354,7 +362,7 @@ step_cli_register() {
 }
 
 step_static() {
-  header "8/8  Static CLI (publishes engagement dashboards to static.withcaldera.com)"
+  header "8/9  Static CLI (publishes engagement dashboards to static.withcaldera.com)"
   local os arch
   os="$(uname -s | tr '[:upper:]' '[:lower:]')"
   arch="$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
@@ -384,6 +392,36 @@ step_static() {
     else
       fail "Static sign-in did not finish. You can do it later: open Terminal and run 'static login'."
       SUMMARY+=("✗ Static sign-in — run: static login")
+    fi
+  fi
+}
+
+step_sweep() {
+  header "9/9  Sweep (acceptance testing: the CLI and the '$SWEEP_PLUGIN' plugin)"
+  if has_sweep; then
+    ok "Sweep CLI already installed ($("$CLAUDE_BIN_DIR/sweep" version 2>/dev/null </dev/null || echo 'version unknown'))"
+    SUMMARY+=("✓ Sweep CLI")
+  else
+    doing "Installing the Sweep CLI from GitHub ($SWEEP_REPO); it brings its own Node, Playwright and Chromium..."
+    if gh api "repos/$SWEEP_REPO/contents/setup/install.sh" -H "Accept: application/vnd.github.raw" 2>/dev/null </dev/null | bash; then
+      ok "Sweep CLI installed at $CLAUDE_BIN_DIR/sweep"; SUMMARY+=("✓ Sweep CLI (installed)")
+    else
+      fail "Could not install the Sweep CLI from $SWEEP_REPO."
+      note "Not fatal: everything else works. Ask $ACCESS_CONTACT for access to $SWEEP_REPO, then re-run this script."
+      SUMMARY+=("✗ Sweep CLI — re-run after getting access to $SWEEP_REPO")
+    fi
+  fi
+  if ! has_claude; then return; fi
+  if sweep_plugin_installed; then
+    ok "Plugin $SWEEP_PLUGIN@$MARKETPLACE installed"
+  else
+    doing "Installing plugin $SWEEP_PLUGIN@$MARKETPLACE..."
+    local out
+    if out="$(claude plugin install "$SWEEP_PLUGIN@$MARKETPLACE" 2>&1 </dev/null)" || grep -qi 'already installed' <<<"$out"; then
+      ok "Plugin $SWEEP_PLUGIN@$MARKETPLACE installed"; SUMMARY+=("✓ Plugin $SWEEP_PLUGIN@$MARKETPLACE (installed)")
+    else
+      fail "Plugin install failed:"; note "$out"
+      SUMMARY+=("✗ Plugin $SWEEP_PLUGIN@$MARKETPLACE — run: claude plugin install $SWEEP_PLUGIN@$MARKETPLACE")
     fi
   fi
 }
@@ -422,6 +460,8 @@ run_check() {
   report "CLI plugin $PLUGIN@$MARKETPLACE installed"      "$(cli_plugin_installed && echo 0 || echo 1)"
   report "Static CLI installed (static)"                  "$(has_static && echo 0 || echo 1)"
   report "Signed in to Static (static whoami)"            "$(static_logged_in && echo 0 || echo 1)"
+  report "Sweep CLI installed (sweep version)"            "$(has_sweep && echo 0 || echo 1)"
+  report "CLI plugin $SWEEP_PLUGIN@$MARKETPLACE installed"  "$(sweep_plugin_installed && echo 0 || echo 1)"
   echo
   if (( MISSING > 0 )); then
     echo "$MISSING item(s) missing. Run this script without --check to fix them."
@@ -457,7 +497,8 @@ main() {
 
   echo "${C_BOLD}Caldera delivery-lead setup${C_OFF}"
   echo "This will install or verify: Command Line Tools, Homebrew, gh, GitHub sign-in,"
-  echo "Claude Code, the '$PLUGIN' plugin from $PLUGIN_REPO, and the Static CLI for dashboards."
+  echo "Claude Code, the '$PLUGIN' plugin from $PLUGIN_REPO, the Static CLI for dashboards,"
+  echo "and Sweep for acceptance testing (its CLI and the '$SWEEP_PLUGIN' plugin)."
   echo "Already-installed items are left alone. Nothing runs with sudo."
   if [[ "$YES" != "1" ]]; then
     if [[ -t 0 ]]; then
@@ -480,6 +521,7 @@ main() {
   step_settings
   step_cli_register
   step_static
+  step_sweep
   print_summary
 }
 

@@ -11,8 +11,8 @@ a few prompts.
 **Before you start**
 - A Mac running macOS 13 or newer.
 - Your Mac login password (Homebrew will ask for it once).
-- A GitHub account that has been added to `withcaldera/delivery-plugin`. If you are not sure,
-  ask Wade (wade.kallhoff@withcaldera.com) before you begin.
+- A GitHub account that has been added to `withcaldera/delivery-plugin` and `withcaldera/sweep`.
+  If you are not sure, ask Wade (wade.kallhoff@withcaldera.com) before you begin.
 - The Claude desktop app installed, and a Claude account (sign in with your Caldera login).
 
 ## 1. Open Terminal
@@ -72,6 +72,13 @@ static.withcaldera.com) and then opens your browser to sign in with your Caldera
 account. Terminal prints a short code; check it matches the one in the browser, then click
 **Connect device**. If the browser does not open, see Troubleshooting.
 
+**Sweep** (2 to 3 min)
+No prompts. The script downloads the `sweep` command (acceptance testing: it runs the agreed
+behaviours against an app in a real browser and checks every page for accessibility problems
+and dead links) together with its own copy of Chrome, a few hundred megabytes, and installs the
+`sweep` plugin. If your GitHub account cannot read `withcaldera/sweep` yet, this step prints a
+message and the rest of the setup is unaffected; see Troubleshooting.
+
 ## 4. How to know it worked
 
 The last thing printed is a **Summary** with a `✓` on every line, followed by **Next steps**.
@@ -83,7 +90,7 @@ Then:
    and offers to fix anything that is off. All green means you are done.
 
 You should also see `/delivery:ground`, `/delivery:decide` and the other delivery commands when
-you type `/`.
+you type `/`, and `/sweep:onboard`, `/sweep:test` and the other Sweep commands.
 
 ## Troubleshooting
 
@@ -92,6 +99,11 @@ Your GitHub account has not been given access yet. Send your GitHub username (th
 that message) to Wade (wade.kallhoff@withcaldera.com) and ask to be added to the repo. Once he
 confirms, open Terminal and paste the one-liner from step 2 again; it skips everything that is
 already done.
+
+**"Could not install the Sweep CLI from withcaldera/sweep"**
+Your GitHub account can read the plugin repo but not the Sweep one yet. Send your GitHub
+username to Wade (wade.kallhoff@withcaldera.com) and ask to be added to `withcaldera/sweep`.
+Once he confirms, paste the one-liner from step 2 again; it only does this step.
 
 **`command not found: claude`**
 The `claude` command was installed but this Terminal window was opened before that. Close the
